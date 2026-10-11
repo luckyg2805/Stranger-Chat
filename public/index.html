@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Stranger Chat</title>
+    <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+    <div class="chat-card">
+        <div class="header">
+            <div>
+                <h2>💬 Stranger Chat</h2>
+                <div id="online" class="online">0 online</div>
+            </div>
+            <div class="status">
+                <span id="dot" class="dot"></span>
+                <span id="status">Click Start to find a stranger</span>
+            </div>
+        </div>
+        <input id="interestsInput" class="interests" placeholder="Interests (optional): music, gaming, movies"
+            autocomplete="off" />
+        <div id="messages"></div>
+        <div id="typing"></div>
+        <div class="actions">
+            <button id="blockBtn" class="small">🚫 Block</button>
+            <button id="reportBtn" class="small">⚠️ Report</button>
+        </div>
+
+        <div class="input-area">
+            <input id="msgInput" placeholder="Type a message..." autocomplete="off" />
+            <button id="sendBtn">Send</button>
+        </div>
+
+        <button id="startBtn">Start / Next</button>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+
+        const status = document.getElementById("status");
+        const dot = document.getElementById("dot");
+        const messages = document.getElementById("messages");
+        const msgInput = document.getElementById("msgInput");
+        const sendBtn = document.getElementById("sendBtn");
+        const startBtn = document.getElementById("startBtn");
+        const typing = document.getElementById("typing");
+
+        const blockBtn = document.getElementById("blockBtn");
+        const reportBtn = document.getElementById("reportBtn");
+
+        let typingTimeout;
+
+        // Only usable while chatting
+        function setChatEnabled(enabled) {
+            msgInput.disabled = !enabled;
+            sendBtn.disabled = !enabled;
+            blockBtn.disabled = !enabled;
+            reportBtn.disabled = !enabled;
+            if (!enabled) typing.textContent = "";
+        }
+
+        blockBtn.onclick = () => {
+            if (confirm("Block this stranger and leave the chat?")) socket.emit("block");
+        };
+
+        reportBtn.onclick = () => {
+            const reason = prompt("Why are you reporting this stranger?");
+            if (reason !== null) socket.emit("report", reason);
+        };
+
+        socket.on("blocked-done", () => {
+            setStatus("Stranger blocked. Click Start / Next", "");
+            setChatEnabled(false);
+        });
+
+        socket.on("report-done", () => {
+            setStatus("Report sent. Click Start / Next", "");
+            setChatEnabled(false);
+        });
+        setChatEnabled(false);
+
+        function setStatus(text, state) {
+            status.textContent = text;
+            dot.className = "dot " + (state || "");
+        }
+
+        function addMessage(text, who) {
+            const div = document.createElement("div");
+            div.className = "bubble " + (who === "You" ? "you" : "stranger");
+            div.textContent = text;
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        startBtn.onclick = () => {
+            messages.innerHTML = "";
+            const interests = document.getElementById("interestsInput").value
+                .split(",")
+                .map((i) => i.trim())
+                .filter((i) => i);
+            socket.emit("find-partner", interests);
+        };
+
+        sendBtn.onclick = () => {
+            const text = msgInput.value.trim();
+            if (!text) return;
+            socket.emit("send-message", text);
+            addMessage(text, "You");
+            msgInput.value = "";
+        };
+
+        msgInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") sendBtn.click();
+        });
+
+        msgInput.addEventListener("input", () => socket.emit("typing"));
+
+        socket.on("waiting", () => {
+            setStatus("Waiting for a stranger...", "waiting");
+            setChatEnabled(false);
+        });
+
+        socket.on("matched", (shared) => {
+            if (shared && shared.length > 0) {
+                setStatus("Connected! You both like: " + shared.join(", "), "connected");
+            } else {
+                setStatus("Connected to a stranger", "connected");
+            }
+            setChatEnabled(true);
+            msgInput.focus();
+        });
+
+        socket.on("partner-left", () => {
+            setStatus("Stranger left. Click Start / Next", "");
+            setChatEnabled(false);
+        });
+
+        socket.on("partner-typing", () => {
+            typing.textContent = "Stranger is typing...";
+            clearTimeout(typingTimeout);
+            typingTimeout = setTimeout(() => (typing.textContent = ""), 1500);
+        });
+
+        socket.on("receive-message", (text) => {
+            typing.textContent = "";
+            addMessage(text, "Stranger");
+        });
+
+        socket.on("online-count", (count) => {
+            document.getElementById("online").textContent = "● " + count + " online";
+        });
+    </script>
+</body>
+
+</html>
